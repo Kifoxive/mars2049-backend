@@ -5,10 +5,8 @@ export default class Player {
     this.playerId = playerId;
   }
 
-  static max_bases = 5;
-  base = 1;
-  static max_roads = 1;
-  road_cards = 0;
+  base = 0;
+  road_cards = 3;
   road = 0;
 
   buildings = {
@@ -24,9 +22,9 @@ export default class Player {
   };
 
   cards = {
-    air: 2,
-    food: 2,
-    mineral: 2,
+    air: 20,
+    food: 20,
+    mineral: 20,
   };
 
   resource_tokens = {

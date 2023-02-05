@@ -122,6 +122,7 @@ const start = async () => {
 
         game.setDiceSymbol(symbol);
         io.to(roomName).emit("get_public_game_data", game);
+
         const privateGameData = game.getFreePlaces();
         socket.emit("send_private_game_data", { board: privateGameData, game });
       });
@@ -129,23 +130,30 @@ const start = async () => {
       socket.on(
         "add_building",
         ({ roomName, playerName, desiredBuilding, indexP, indexM }) => {
-          const { game } = roomsData[roomName];
-          if (playerName !== game.currentTurnPlayer.username) return;
+          try {
+            const { game } = roomsData[roomName];
+            if (playerName !== game.currentTurnPlayer.username) return;
 
-          game.addBuilding(
-            desiredBuilding,
-            playerName,
-            game.currentTurnPlayer.color,
-            indexP,
-            indexM
-          );
+            game.addBuilding(
+              desiredBuilding,
+              playerName,
+              game.currentTurnPlayer.color,
+              indexP,
+              indexM
+            );
 
-          io.to(roomName).emit("get_public_game_data", game);
-          const privateGameData = game.getFreePlaces();
-          socket.emit("send_private_game_data", {
-            board: privateGameData,
-            game,
-          });
+            io.to(roomName).emit("get_public_game_data", game);
+            const privateGameData = game.getFreePlaces();
+            socket.emit("send_private_game_data", {
+              board: privateGameData,
+              game,
+            });
+          } catch ({ title, message }) {
+            socket.emit("server_message", {
+              title: `${title}`,
+              message: `${message}`,
+            });
+          }
         }
       );
 
@@ -154,7 +162,7 @@ const start = async () => {
       });
     });
   } catch (e) {
-    console.log(e.message);
+    console.log(e.title);
     res.status(500).send(`Some error occured: ${e}`);
   }
 };

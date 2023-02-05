@@ -1,4 +1,5 @@
 import Building from "./Building.js";
+import GameError from "./GameError.js";
 import Player from "./Player.js";
 
 export default class Game {
@@ -6,22 +7,32 @@ export default class Game {
     this.playersNames = Game.shuffleArray(playersNames);
     this.playersCount = playersCount;
     this.board = [];
-    this.playersObj = {};
-    this.turn = 0;
-    this.totalGameTurn = 0;
-    this.playersColors = {};
-    this.currentTurnPlayer = null;
-    this.diceSymbol = null;
-    this.canMakeTurn = false;
-    this.diced = false;
 
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 7; i++) {
       this.board[i] = [];
+      if (i === 6) {
+        // for H2O_station
+        this.board[i][0] = null;
+        break;
+      }
+
       for (let k = 0; k < 24; k++) {
         this.board[i].push(null);
       }
     }
   }
+  static max_bases = 5;
+  static max_roads = 1;
+
+  playersObj = {};
+  turn = 0;
+  totalGameTurn = 0;
+  playersColors = {};
+  currentTurnPlayer = null;
+  diceSymbol = null;
+  canMakeTurn = false;
+  diced = false;
+  isGameStarted = false;
 
   start() {
     const colors = ["green", "orange", "pink", "blue"];
@@ -40,10 +51,11 @@ export default class Game {
     this.currentTurnPlayer = this.playersObj[this.playersNames[this.turn]];
     this.currentTurnPlayer.isMyTurn = true;
     this.madeStartBases();
+    this.isGameStarted = true;
   }
 
   makeTurn() {
-    if (!this.canMakeTurn) throw Error("Can not make turn");
+    if (!this.canMakeTurn) throw Error("Can not make turn, shake a dice");
     this.currentTurnPlayer.isMyTurn = false;
     //  this.turn = this.turn < this.playersCount - 1 ? this.turn + 1 : 0;
     this.turn = this.turn === 0 ? this.playersCount - 1 : this.turn - 1;
@@ -63,18 +75,6 @@ export default class Game {
   madeScene() {
     // this.board[]
   }
-
-  static buildingCosts = {
-    air_station: { food: 2, mineral: 2 },
-    food_station: { air: 2, mineral: 2 },
-    mineral_station: { air: 2, mineral: 2 },
-    base: { air: 3, food: 3, mineral: 3 },
-    laboratory: { air: 4, mineral: 3 },
-    peaceful_mission: { air: 3, food: 1 },
-    agressive_mission: { air: 1, mineral: 3 },
-    roads: { road_cards: 3 },
-    H2O_station: { air: 8, food: 8, mineral: 8 },
-  };
 
   static shuffleArray(array) {
     let curId = array.length;
@@ -101,7 +101,8 @@ export default class Game {
         this.playersNames[i],
         color,
         0,
-        (i * 24) / this.playersCount - 1
+        (i * 24) / this.playersCount - 1,
+        false
       );
 
       this.addBuilding(
@@ -109,7 +110,8 @@ export default class Game {
         this.playersNames[i],
         color,
         0,
-        (i * 24) / this.playersCount
+        (i * 24) / this.playersCount,
+        false
       );
 
       this.addBuilding(
@@ -117,7 +119,8 @@ export default class Game {
         this.playersNames[i],
         color,
         0,
-        (i * 24) / this.playersCount + 1
+        (i * 24) / this.playersCount + 1,
+        false
       );
 
       this.addBuilding(
@@ -125,53 +128,8 @@ export default class Game {
         this.playersNames[i],
         color,
         1,
-        (i * 24) / this.playersCount
-      );
-    }
-  }
-
-  addBuilding(building, owner, color, paralel, meridian) {
-    meridian = Game.getMeridian(meridian);
-
-    const ownerObj = this.playersObj[owner];
-
-    switch (building) {
-      case "air_station":
-        ownerObj.buildings[building]++;
-        break;
-      case "food_station":
-        ownerObj.buildings[building]++;
-        break;
-      case "mineral_station":
-        ownerObj.buildings[building]++;
-        break;
-      case "base":
-        ownerObj.base++;
-        break;
-      case "laboratory":
-        if (ownerObj.labaratories.rate === 4) {
-          ownerObj.labaratories.rate = 3;
-          ownerObj.labaratories.three++;
-        } else if (ownerObj.labaratories.rate === 3) {
-          ownerObj.labaratories.rate = 2;
-          ownerObj.labaratories.two++;
-        }
-        break;
-      case "road":
-        this.owner.road++;
-      case "H2O_station":
-        this.base++;
-      default:
-        throw Error(`Building ${building} does not exist`);
-    }
-
-    if (this.board[paralel][meridian] == null) {
-      this.board[paralel][meridian] = new Building(
-        building,
-        owner,
-        color,
-        paralel,
-        meridian
+        (i * 24) / this.playersCount,
+        false
       );
     }
   }
@@ -227,10 +185,10 @@ export default class Game {
         break;
     }
 
-    //  for (let card in this.currentTurnPlayer.cards) {
-    //    this.currentTurnPlayer.cards[card] +=
-    //      this.currentTurnPlayer.buildings[card + "_station"];
-    //  }
+    for (let card in this.currentTurnPlayer.cards) {
+      this.currentTurnPlayer.cards[card] +=
+        this.currentTurnPlayer.buildings[card + "_station"];
+    }
 
     this.canMakeTurn = true;
   }
@@ -251,37 +209,215 @@ export default class Game {
           building.building === "base"
         ) {
           // on the top
-          if (this.board[paralel] + 1) {
+          if (this.board[paralel + 1]) {
             if (
               this.board[paralel + 1][Game.getMeridian(meridian - 1)] === null
             ) {
-              //   console.log("on top right");
-              around[paralel + 1][Game.getMeridian(meridian - 1)] = true;
+              // on top right
+              this.possiblyBuilding(
+                around,
+                paralel + 1,
+                Game.getMeridian(meridian - 1)
+              );
             }
             if (this.board[paralel + 1][meridian] === null) {
-              //   console.log("on top");
-              around[paralel + 1][Game.getMeridian(meridian)] = true;
+              // on top
+              this.possiblyBuilding(around, paralel + 1, meridian, true);
             }
             if (
               this.board[paralel + 1][Game.getMeridian(meridian + 1)] === null
             ) {
-              //   console.log("on top left");
-              around[paralel + 1][Game.getMeridian(meridian + 1)] = true;
+              // on top left
+              this.possiblyBuilding(
+                around,
+                paralel + 1,
+                Game.getMeridian(meridian + 1)
+              );
             }
           }
 
           //  on the middle
           if (this.board[paralel][Game.getMeridian(meridian - 1)] === null) {
-            // console.log("on right");
-            around[paralel][Game.getMeridian(meridian - 1)] = true;
+            // on right
+            this.possiblyBuilding(
+              around,
+              paralel,
+              Game.getMeridian(meridian - 1)
+            );
           }
           if (this.board[paralel][Game.getMeridian(meridian + 1)] === null) {
-            // console.log("on left");
-            around[paralel][Game.getMeridian(meridian + 1)] = true;
+            // on left
+            this.possiblyBuilding(
+              around,
+              paralel,
+              Game.getMeridian(meridian + 1)
+            );
+          }
+
+          // on the bottom
+          if (this.board[paralel - 1]) {
+            if (
+              this.board[paralel - 1][Game.getMeridian(meridian - 1)] === null
+            ) {
+              // on bottom right
+              this.possiblyBuilding(
+                around,
+                paralel - 1,
+                Game.getMeridian(meridian - 1)
+              );
+            }
+            if (this.board[paralel - 1][meridian] === null) {
+              // on bottom
+              this.possiblyBuilding(around, paralel - 1, meridian);
+            }
+            if (
+              this.board[paralel - 1][Game.getMeridian(meridian + 1)] === null
+            ) {
+              // on bottom left
+              this.possiblyBuilding(
+                around,
+                paralel - 1,
+                Game.getMeridian(meridian + 1)
+              );
+            }
           }
         }
       }
     }
     return around;
   }
+
+  addBuilding(
+    building,
+    owner,
+    color,
+    paralel,
+    meridian,
+    payForBuilding = true
+  ) {
+    try {
+      meridian = Game.getMeridian(meridian);
+      const ownerObj = this.playersObj[owner];
+      const canPay = this.canPayForBuilding(building, ownerObj);
+
+      switch (building) {
+        case "air_station":
+          ownerObj.buildings[building]++;
+          break;
+        case "food_station":
+          ownerObj.buildings[building]++;
+          break;
+        case "mineral_station":
+          ownerObj.buildings[building]++;
+          break;
+        case "base":
+          if (paralel > 4 || ownerObj.base > 5) {
+            throw new GameError(
+              "Not valid place",
+              "You can not build the base in not valid place on the map "
+            );
+          }
+
+          ownerObj.base++;
+          break;
+        case "laboratory":
+          if (ownerObj.labaratories.rate === 4) {
+            ownerObj.labaratories.rate = 3;
+            ownerObj.labaratories.two++;
+          } else if (ownerObj.labaratories.rate === 3) {
+            ownerObj.labaratories.rate = 2;
+            ownerObj.labaratories.three++;
+          }
+          break;
+        case "road":
+          ownerObj.road++;
+          break;
+        case "H2O_station":
+          ownerObj.base++;
+          break;
+        default:
+          throw Error(`Building "${building}" does not exist`);
+      }
+
+      if (this.isGameStarted && canPay && payForBuilding) {
+        this.payForBuilding(building, ownerObj);
+      }
+      // if (building === "H2O_station") console.log(true);;
+      if (this.board[paralel][meridian] == null) {
+        this.board[paralel][meridian] = new Building(
+          building,
+          owner,
+          color,
+          paralel,
+          meridian
+        );
+      }
+    } catch ({ title, message }) {
+      throw new GameError(title, message);
+    }
+  }
+
+  static buildingCosts = {
+    air_station: { food: 2, mineral: 2 },
+    food_station: { air: 2, mineral: 2 },
+    mineral_station: { air: 2, food: 2 },
+    base: { air: 3, food: 3, mineral: 3 },
+    laboratory: { air: 4, mineral: 3 },
+    peaceful_mission: { air: 3, food: 1 },
+    agressive_mission: { air: 1, mineral: 3 },
+    road: { road_cards: 3 },
+    H2O_station: { air: 8, food: 8, mineral: 8 },
+  };
+
+  canPayForBuilding = (building, ownerObj) => {
+    let canPay = false;
+
+    if (building === "road") {
+      if (ownerObj.road_cards >= Game.buildingCosts[building].road_cards) {
+        canPay = true;
+      } else canPay = false;
+    } else {
+      canPay = Object.keys(Game.buildingCosts[building]).every((card) => {
+        return ownerObj.cards[card] - Game.buildingCosts[building][card] >= 0;
+      });
+    }
+
+    if (!canPay)
+      throw new GameError("Not enough resources", "Grow your colony");
+
+    return canPay;
+  };
+
+  payForBuilding = (building, ownerObj) => {
+    try {
+      if (building === "road") {
+        ownerObj.road_cards -= Game.buildingCosts[building].road_cards;
+      } else {
+        Object.keys(Game.buildingCosts[building]).forEach((card) => {
+          ownerObj.cards[card] -= Game.buildingCosts[building][card];
+        });
+      }
+    } catch ({ title, message }) {
+      throw new GameError(title, message);
+    }
+  };
+
+  possiblyBuilding = (around, paralel, meridian, isAboveTheBase = false) => {
+    if (paralel === 6) {
+      around[paralel][meridian] = "H2O_station";
+    } else if (paralel === 5 && isAboveTheBase) {
+      around[paralel][meridian] = "road";
+    } else if (paralel < 5) {
+      if (
+        paralel < this.currentTurnPlayer.base &&
+        this.currentTurnPlayer.labaratories.three >= 1
+      ) {
+        around[paralel][meridian] = "station";
+      } else if (paralel < this.currentTurnPlayer.base) {
+        around[paralel][meridian] = "no_base";
+      } else if (this.currentTurnPlayer.labaratories.three >= 1) {
+        around[paralel][meridian] = "no_labaratory";
+      } else around[paralel][meridian] = "all";
+    }
+  };
 }
