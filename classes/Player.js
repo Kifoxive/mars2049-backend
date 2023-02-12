@@ -29,16 +29,16 @@ export default class Player {
 
   resource_tokens = {
     air: {
-      three: 0,
-      eight: 0,
+      three: 2,
+      eight: 2,
     },
     food: {
-      three: 0,
-      eight: 0,
+      three: 2,
+      eight: 2,
     },
     mineral: {
-      three: 0,
-      eight: 0,
+      three: 2,
+      eight: 2,
     },
   };
 

@@ -38,93 +38,177 @@ const start = async () => {
     });
     io.on("connection", (socket) => {
       socket.on("join_room", ({ roomName, playerName }) => {
-        // if the data are empty
-        if (!roomName || !playerName) {
-          return socket.emit({ errorMessage: "empty data" });
-        }
+        try {
+          // if the data are empty
+          if (!roomName || !playerName) {
+            return socket.emit({ errorMessage: "empty data" });
+          }
 
-        // if the username is the same as the creator username
-        // or if the creator connect to its own room (for creator)
-        if (
-          roomsData[roomName] &&
-          playerName === roomsData[roomName].creatorName
-        ) {
-          socket.emit({ errorMessage: "cannot join again" });
-        }
+          // if the username is the same as the creator username
+          // or if the creator connect to its own room (for creator)
+          if (playerName === roomsData[roomName]?.creatorName);
 
-        // if room is already created (for other players)
-        if (roomsData[roomName]) {
+          // if room is already created (for other players)
+          if (roomsData[roomName]) {
+            const room = roomsData[roomName];
+
+            if (room.players.includes(playerName)) {
+              return;
+            }
+            const roomInAvailableList = roomsAvailable.find(
+              (room) => room.roomName === roomName
+            );
+            roomInAvailableList.roomPlayers.push(playerName);
+
+            socket.join(roomName);
+            room.addPlayer(playerName, socket.id);
+            // roomsAvailable = [
+            //   ...roomsAvailable,
+            //   (players = [...roomsAvailable.players, playerName]),
+            // ];
+
+            io.to(roomName).emit("player_joined", room.players);
+            io.to(room.creatorId).emit("allow_start_game", true);
+            return;
+          }
+
+          // if room is a new
+          // if (roomName in roomsData) return socket.emit({ errorMessage: "" });
+
+          roomsAvailable.push({
+            roomName,
+            roomCreator: playerName,
+            roomPlayers: [playerName],
+          });
+
+          roomsData[roomName] = new Room(roomName, playerName, socket.id);
           const room = roomsData[roomName];
 
-          socket.join(roomName);
           room.addPlayer(playerName, socket.id);
+
+          socket.emit("set_creator");
+          socket.join(roomName);
           io.to(roomName).emit("player_joined", room.players);
-          io.to(room.creatorId).emit("allow_start_game");
-          return;
-        }
-
-        // if room is a new
-        if (roomName in roomsData) return socket.emit({ errorMessage: "" });
-
-        roomsAvailable.push({ roomName, playerName });
-        roomsData[roomName] = new Room(roomName, playerName, socket.id);
-        const room = roomsData[roomName];
-
-        room.addPlayer(playerName, socket.id);
-
-        socket.emit("set_creator");
-        socket.join(roomName);
-        io.to(roomName).emit("player_joined", room.players);
-      });
-
-      socket.on("start_game", ({ playerName, roomName }) => {
-        if (roomsData[roomName].creatorName !== playerName) {
-          return socket.emit({
-            errorMessage: "only admin can start the game, no permission",
+        } catch ({ title = "Error", message }) {
+          socket.emit("server_message", {
+            title: `${title}`,
+            message: `${message}`,
+            type: "error",
           });
         }
+      });
 
-        roomsAvailable = roomsAvailable.filter(
-          (room) => room.roomName !== roomName
-        );
+      socket.on(
+        "remove_player",
+        ({ roomName, playerName, removePlayerName }) => {
+          try {
+            const room = roomsData[roomName];
+            if (playerName !== room.creatorName) return;
 
-        const room = roomsData[roomName];
-        const game = room.startGame();
+            io.to(room.playersSocketIndexes[removePlayerName]).emit(
+              "remove_player"
+            );
 
-        game.start(room.players);
-        io.to(roomName).emit("new_turn", game);
-        io.to(roomName).emit("get_public_game_data", game);
+            const roomInAvailableList = roomsAvailable.find(
+              (room) => room.roomName === roomName
+            );
+            roomInAvailableList.roomPlayers.splice(
+              roomInAvailableList.roomPlayers.indexOf(playerName, 1)
+            );
+
+            room.removePlayer(removePlayerName);
+
+            if (room.playersCount < 2) {
+              io.to(room.creatorId).emit("allow_start_game", false);
+            }
+            io.to(roomName).emit("player_joined", room.players);
+          } catch ({ title = "Error", message }) {
+            socket.emit("server_message", {
+              title: `${title}`,
+              message: `${message}`,
+              type: "error",
+            });
+          }
+        }
+      );
+
+      socket.on("start_game", ({ roomName, playerName }) => {
+        try {
+          if (roomsData[roomName].creatorName !== playerName) {
+            return socket.emit({
+              errorMessage: "only admin can start the game, no permission",
+            });
+          }
+
+          roomsAvailable = roomsAvailable.filter(
+            (room) => room.roomName !== roomName
+          );
+
+          const room = roomsData[roomName];
+          const game = room.startGame();
+
+          game.start(room.players);
+          io.to(roomName).emit("new_turn", game);
+          io.to(roomName).emit("get_public_game_data", game);
+        } catch ({ title = "Error", message }) {
+          socket.emit("server_message", {
+            title: `${title}`,
+            message: `${message}`,
+            type: "error",
+          });
+        }
       });
 
       socket.on("get_private_data", ({ roomName, playerName }) => {
-        const { game } = roomsData[roomName];
-        const playerData = game.playersObj[playerName];
-        socket.emit("get_private_data", playerData);
+        try {
+          const { game } = roomsData[roomName];
+          const playerData = game.playersObj[playerName];
+          socket.emit("get_private_data", playerData);
+        } catch ({ title = "Error", message }) {
+          socket.emit("server_message", {
+            title: `${title}`,
+            message: `${message}`,
+            type: "error",
+          });
+        }
       });
 
       socket.on("make_turn", ({ roomName, playerName }) => {
-        const { game } = roomsData[roomName];
-        if (playerName !== game.currentTurnPlayer.username) {
-          //  io.to(roomName).emit("server_message", {
-          //   title: "Not allowed",
-          //   message: "You can not make turn",
-          // });
-          return;
+        try {
+          const { game } = roomsData[roomName];
+          if (playerName !== game.currentTurnPlayer.username) return;
+          game.makeTurn();
+          io.to(roomName).emit("new_turn", game);
+          io.to(roomName).emit("get_public_game_data", game);
+        } catch ({ title = "Error", message }) {
+          socket.emit("server_message", {
+            title: `${title}`,
+            message: `${message}`,
+            type: "error",
+          });
         }
-        game.makeTurn();
-        io.to(roomName).emit("new_turn", game);
-        io.to(roomName).emit("get_public_game_data", game);
       });
 
       socket.on("set_dice_symbol", ({ roomName, playerName, symbol }) => {
-        const { game } = roomsData[roomName];
-        if (playerName !== game.currentTurnPlayer.username) return;
+        try {
+          const { game } = roomsData[roomName];
+          if (playerName !== game.currentTurnPlayer.username) return;
 
-        game.setDiceSymbol(symbol);
-        io.to(roomName).emit("get_public_game_data", game);
+          game.setDiceSymbol(symbol);
+          io.to(roomName).emit("get_public_game_data", game);
 
-        const privateGameData = game.getFreePlaces();
-        socket.emit("send_private_game_data", { board: privateGameData, game });
+          const boardWithPossiblyBuildings = game.getFreePlaces();
+          socket.emit("send_private_game_data", {
+            ...game,
+            board: boardWithPossiblyBuildings,
+          });
+        } catch ({ title = "Error", message }) {
+          socket.emit("server_message", {
+            title: `${title}`,
+            message: `${message}`,
+            type: "error",
+          });
+        }
       });
 
       socket.on(
@@ -142,20 +226,112 @@ const start = async () => {
               indexM
             );
 
-            io.to(roomName).emit("get_public_game_data", game);
-            const privateGameData = game.getFreePlaces();
+            if (desiredBuilding === "H2O_station") {
+              const playerObj = game.playersObj[playerName];
+              if (
+                playerObj.road < 1 ||
+                playerObj.base < 5 ||
+                playerObj !== game.currentTurnPlayer
+              )
+                throw new GameError(
+                  "Can not win",
+                  "You can not build an H2O station"
+                );
+
+              game.win();
+              socket.emit("confirm_win", game);
+            } else {
+              io.to(roomName).emit("get_public_game_data", game);
+            }
+            const boardWithPossiblyBuildings = game.getFreePlaces();
             socket.emit("send_private_game_data", {
-              board: privateGameData,
-              game,
+              ...game,
+              board: boardWithPossiblyBuildings,
             });
-          } catch ({ title, message }) {
+          } catch ({ title = "Error", message }) {
             socket.emit("server_message", {
               title: `${title}`,
               message: `${message}`,
+              type: "error",
             });
           }
         }
       );
+
+      socket.on("submit_win", ({ roomName, playerName }) => {
+        try {
+          const { game } = roomsData[roomName];
+          if (playerName !== game.currentTurnPlayer.username) return;
+
+          const playerObj = game.playersObj[playerName];
+          if (playerObj.road < 1 || playerObj.base < 5)
+            throw new GameError(
+              "Can not win",
+              "You can not build an H2O station"
+            );
+
+          game.finish();
+          io.to(roomName).emit("finish", game);
+
+          io.to(roomName).emit("server_message", {
+            title: `${
+              playerObj.color.charAt(0).toUpperCase() + playerObj.color.slice(1)
+            } won!`,
+            message: `Congratulations to ${playerName}`,
+            type: "message",
+          });
+
+          io.to(roomName).emit("server_message", {
+            title: `${
+              playerObj.color.charAt(0).toUpperCase() + playerObj.color.slice(1)
+            } won!`,
+            message: `Congratulations to ${playerName}`,
+            type: "message",
+          });
+        } catch ({ title = "Error", message }) {
+          socket.emit("server_message", {
+            title: `${title}`,
+            message: `${message}`,
+            type: "error",
+          });
+        }
+      });
+
+      socket.on("buy_token", ({ roomName, playerName, resource, to }) => {
+        try {
+          const { game } = roomsData[roomName];
+          if (playerName !== game.currentTurnPlayer.username) return;
+
+          game.buyToken(resource, to);
+
+          const playerData = game.playersObj[playerName];
+          socket.emit("get_private_data", playerData);
+        } catch ({ title = "Error", message }) {
+          socket.emit("server_message", {
+            title: `${title}`,
+            message: `${message}`,
+            type: "error",
+          });
+        }
+      });
+
+      socket.on("sell_token", ({ roomName, playerName, resource, from }) => {
+        try {
+          const { game } = roomsData[roomName];
+          if (playerName !== game.currentTurnPlayer.username) return;
+
+          game.sellToken(resource, from);
+
+          const playerData = game.playersObj[playerName];
+          socket.emit("get_private_data", playerData);
+        } catch ({ title = "Error", message }) {
+          socket.emit("server_message", {
+            title: `${title}`,
+            message: `${message}`,
+            type: "error",
+          });
+        }
+      });
 
       socket.on("disconnect", ({ id }) => {
         io.to(id).emit("message", "disconnected");

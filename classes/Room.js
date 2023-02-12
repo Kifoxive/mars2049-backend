@@ -5,15 +5,16 @@ export default class Room {
     this.roomName = roomName;
     this.creatorName = creatorName;
     this.creatorId = creatorId;
-    this.players = [];
-    this.playersCount = 0;
   }
+  players = [];
+  playersCount = 0;
+  playersSocketIndexes = {};
 
-  addPlayer(username) {
-    // if (this.playersCount >= 4) throw new Error("too much players");
+  addPlayer(username, socketId) {
     if (this.playersCount >= 4) return;
-    this.playersCount++;
     this.players.push(username);
+    this.playersSocketIndexes[username] = socketId;
+    this.playersCount++;
   }
 
   removePlayer(username) {
@@ -21,6 +22,7 @@ export default class Room {
       this.players.findIndex((item) => item === username),
       1
     );
+    delete this.playersSocketIndexes[username];
     this.playersCount--;
   }
 

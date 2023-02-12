@@ -25,7 +25,7 @@ export default class Game {
   static max_roads = 1;
 
   playersObj = {};
-  turn = 0;
+  turnIndex = 0;
   totalGameTurn = 0;
   playersColors = {};
   currentTurnPlayer = null;
@@ -33,6 +33,7 @@ export default class Game {
   canMakeTurn = false;
   diced = false;
   isGameStarted = false;
+  winner = null;
 
   start() {
     const colors = ["green", "orange", "pink", "blue"];
@@ -48,18 +49,19 @@ export default class Game {
       );
     }
 
-    this.currentTurnPlayer = this.playersObj[this.playersNames[this.turn]];
+    this.currentTurnPlayer = this.playersObj[this.playersNames[this.turnIndex]];
     this.currentTurnPlayer.isMyTurn = true;
     this.madeStartBases();
     this.isGameStarted = true;
   }
 
   makeTurn() {
-    if (!this.canMakeTurn) throw Error("Can not make turn, shake a dice");
+    if (!this.canMakeTurn) throw Error("Can not make turnIndex, shake a dice");
     this.currentTurnPlayer.isMyTurn = false;
-    //  this.turn = this.turn < this.playersCount - 1 ? this.turn + 1 : 0;
-    this.turn = this.turn === 0 ? this.playersCount - 1 : this.turn - 1;
-    this.currentTurnPlayer = this.playersObj[this.playersNames[this.turn]];
+    //  this.turnIndex = this.turnIndex < this.playersCount - 1 ? this.turnIndex + 1 : 0;
+    this.turnIndex =
+      this.turnIndex === 0 ? this.playersCount - 1 : this.turnIndex - 1;
+    this.currentTurnPlayer = this.playersObj[this.playersNames[this.turnIndex]];
     this.currentTurnPlayer.isMyTurn = true;
     if (this.playersNames[0] === this.currentTurnPlayer.username) {
       this.totalGameTurn++;
@@ -68,12 +70,11 @@ export default class Game {
     this.diced = false;
   }
 
-  finish() {
-    // this.winner = null
+  win() {
+    this.winner = this.currentTurnPlayer;
   }
-
-  madeScene() {
-    // this.board[]
+  finish() {
+    console.log("finish");
   }
 
   static shuffleArray(array) {
@@ -154,7 +155,7 @@ export default class Game {
   }
 
   setDiceSymbol(symbol) {
-    if (this.diced) throw Error("Already diced");
+    if (this.diced) throw new GameError("Already diced", "Some error occured");
     this.diceSymbol = symbol;
     this.diced = true;
     this.currentTurnPlayer.lastDice = symbol;
@@ -194,13 +195,18 @@ export default class Game {
   }
 
   getFreePlaces() {
-    if (!this.diced) throw Error("Not diced");
+    if (!this.diced) throw new GameError("Not diced", "Some error occured");
     const around = [];
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 7; i++) {
       around[i] = this.board[i].slice();
     }
 
-    for (let paralel = 0; paralel < 6; paralel++) {
+    for (let paralel = 0; paralel < 7; paralel++) {
+      if (paralel + 1 === 6 && this.board[6][0] === null) {
+        this.possiblyBuilding(around, paralel + 1, 0);
+        break;
+      }
+
       for (let meridian = 0; meridian < 24; meridian++) {
         const building = this.board[paralel][meridian];
         if (
@@ -342,7 +348,7 @@ export default class Game {
       if (this.isGameStarted && canPay && payForBuilding) {
         this.payForBuilding(building, ownerObj);
       }
-      // if (building === "H2O_station") console.log(true);;
+      // if (building === "H2O_station") console.log(true);
       if (this.board[paralel][meridian] == null) {
         this.board[paralel][meridian] = new Building(
           building,
@@ -403,7 +409,7 @@ export default class Game {
   };
 
   possiblyBuilding = (around, paralel, meridian, isAboveTheBase = false) => {
-    if (paralel === 6) {
+    if (paralel === 6 && this.currentTurnPlayer.road === 1) {
       around[paralel][meridian] = "H2O_station";
     } else if (paralel === 5 && isAboveTheBase) {
       around[paralel][meridian] = "road";
@@ -420,4 +426,29 @@ export default class Game {
       } else around[paralel][meridian] = "all";
     }
   };
+
+  static tokens = {
+    three: 3,
+    eight: 8,
+  };
+
+  buyToken(resource, to) {
+    const player = this.currentTurnPlayer;
+
+    if (player.cards[resource] - Game.tokens[to] >= 0) {
+      player.cards[resource] -= Game.tokens[to];
+      player.resource_tokens[resource][to]++;
+    }
+    return;
+  }
+
+  sellToken(resource, from) {
+    const player = this.currentTurnPlayer;
+
+    if (player.resource_tokens[resource][from] > 0) {
+      player.resource_tokens[resource][from]--;
+      player.cards[resource] += Game.tokens[from];
+    }
+    return;
+  }
 }
