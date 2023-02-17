@@ -6,13 +6,13 @@ export default class Player {
   }
 
   base = 0;
-  road_cards = 3;
+  road_cards = 0;
   road = 0;
 
   buildings = {
-    air_station: 20,
-    food_station: 20,
-    mineral_station: 20,
+    air_station: 0,
+    food_station: 0,
+    mineral_station: 0,
   };
 
   laboratories = {
