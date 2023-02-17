@@ -176,6 +176,8 @@ export default class Game {
         }
         break;
       case "skip":
+        // this.canMakeTurn = true;
+        // this.makeTurn();
         break;
       case "air":
         for (let player in this.playersObj) {
@@ -195,7 +197,8 @@ export default class Game {
   }
 
   getFreePlaces() {
-    if (!this.diced) throw new GameError("Not diced", "Some error occured");
+    if (!this.diced)
+      throw new GameError("Not diced", "The dice was not shaked");
     const around = [];
     for (let i = 0; i < 7; i++) {
       around[i] = this.board[i].slice();
@@ -295,7 +298,7 @@ export default class Game {
 
   addBuilding(
     building,
-    owner,
+    ownerName,
     color,
     paralel,
     meridian,
@@ -303,8 +306,25 @@ export default class Game {
   ) {
     try {
       meridian = Game.getMeridian(meridian);
-      const ownerObj = this.playersObj[owner];
+      const ownerObj = this.playersObj[ownerName];
+
+      if (building === "laboratory") {
+        switch (ownerObj.laboratories.rate) {
+          case 4:
+            building = "laboratory_three";
+            break;
+          case 3:
+            building = "laboratory_two";
+            break;
+          case 2:
+            return;
+        }
+      }
+
       const canPay = this.canPayForBuilding(building, ownerObj);
+
+      if (!canPay && payForBuilding)
+        throw new GameError("Not enough resources", "Grow your colony");
 
       switch (building) {
         case "air_station":
@@ -326,14 +346,13 @@ export default class Game {
 
           ownerObj.base++;
           break;
-        case "laboratory":
-          if (ownerObj.labaratories.rate === 4) {
-            ownerObj.labaratories.rate = 3;
-            ownerObj.labaratories.two++;
-          } else if (ownerObj.labaratories.rate === 3) {
-            ownerObj.labaratories.rate = 2;
-            ownerObj.labaratories.three++;
-          }
+        case "laboratory_two":
+          ownerObj.laboratories.rate = 2;
+          ownerObj.laboratories.two++;
+          break;
+        case "laboratory_three":
+          ownerObj.laboratories.rate = 3;
+          ownerObj.laboratories.three++;
           break;
         case "road":
           ownerObj.road++;
@@ -348,11 +367,11 @@ export default class Game {
       if (this.isGameStarted && canPay && payForBuilding) {
         this.payForBuilding(building, ownerObj);
       }
-      // if (building === "H2O_station") console.log(true);
+
       if (this.board[paralel][meridian] == null) {
         this.board[paralel][meridian] = new Building(
           building,
-          owner,
+          ownerName,
           color,
           paralel,
           meridian
@@ -368,7 +387,8 @@ export default class Game {
     food_station: { air: 2, mineral: 2 },
     mineral_station: { air: 2, food: 2 },
     base: { air: 3, food: 3, mineral: 3 },
-    laboratory: { air: 4, mineral: 3 },
+    laboratory_two: { air: 4, mineral: 3 },
+    laboratory_three: { air: 4, mineral: 3 },
     peaceful_mission: { air: 3, food: 1 },
     agressive_mission: { air: 1, mineral: 3 },
     road: { road_cards: 3 },
@@ -381,15 +401,12 @@ export default class Game {
     if (building === "road") {
       if (ownerObj.road_cards >= Game.buildingCosts[building].road_cards) {
         canPay = true;
-      } else canPay = false;
+      }
     } else {
       canPay = Object.keys(Game.buildingCosts[building]).every((card) => {
         return ownerObj.cards[card] - Game.buildingCosts[building][card] >= 0;
       });
     }
-
-    if (!canPay)
-      throw new GameError("Not enough resources", "Grow your colony");
 
     return canPay;
   };
@@ -416,13 +433,13 @@ export default class Game {
     } else if (paralel < 5) {
       if (
         paralel < this.currentTurnPlayer.base &&
-        this.currentTurnPlayer.labaratories.three >= 1
+        this.currentTurnPlayer.laboratories.three >= 1
       ) {
         around[paralel][meridian] = "station";
       } else if (paralel < this.currentTurnPlayer.base) {
         around[paralel][meridian] = "no_base";
-      } else if (this.currentTurnPlayer.labaratories.three >= 1) {
-        around[paralel][meridian] = "no_labaratory";
+      } else if (this.currentTurnPlayer.laboratories.two >= 1) {
+        around[paralel][meridian] = "no_laboratory";
       } else around[paralel][meridian] = "all";
     }
   };
@@ -450,5 +467,13 @@ export default class Game {
       player.cards[resource] += Game.tokens[from];
     }
     return;
+  }
+
+  tradeCards(from, to) {
+    const playerObj = this.currentTurnPlayer;
+    if (playerObj.cards[from] >= playerObj.laboratories.rate) {
+      playerObj.cards[from] -= playerObj.laboratories.rate;
+      playerObj.cards[to] += 1;
+    }
   }
 }

@@ -139,6 +139,10 @@ const start = async () => {
               errorMessage: "only admin can start the game, no permission",
             });
           }
+          roomsData[roomName].timer = setTimeout(() => {
+            io.to(roomName).emit("remove_room");
+            delete roomsData[roomName];
+          }, 2 * 60 * 1000);
 
           roomsAvailable = roomsAvailable.filter(
             (room) => room.roomName !== roomName
@@ -148,7 +152,7 @@ const start = async () => {
           const game = room.startGame();
 
           game.start(room.players);
-          io.to(roomName).emit("new_turn", game);
+          io.to(roomName).emit("new_turn", game.currentTurnPlayer.username);
           io.to(roomName).emit("get_public_game_data", game);
         } catch ({ title = "Error", message }) {
           socket.emit("server_message", {
@@ -175,10 +179,26 @@ const start = async () => {
 
       socket.on("make_turn", ({ roomName, playerName }) => {
         try {
+          if (!roomsData[roomName]) {
+            socket.emit("server_message", {
+              title: `Room "${roomName} was removed"`,
+              message: `Play frequently!`,
+              type: "error",
+            });
+          } else {
+            clearTimeout(roomsData[roomName].timer);
+          }
+
+          roomsData[roomName].timer = setTimeout(() => {
+            io.to(roomName).emit("remove_room");
+            delete roomsData[roomName];
+          }, 10 * 60 * 1000);
+
           const { game } = roomsData[roomName];
           if (playerName !== game.currentTurnPlayer.username) return;
+
           game.makeTurn();
-          io.to(roomName).emit("new_turn", game);
+          io.to(roomName).emit("new_turn", game.currentTurnPlayer.username);
           io.to(roomName).emit("get_public_game_data", game);
         } catch ({ title = "Error", message }) {
           socket.emit("server_message", {
@@ -193,15 +213,82 @@ const start = async () => {
         try {
           const { game } = roomsData[roomName];
           if (playerName !== game.currentTurnPlayer.username) return;
+          const playerObj = game.playersObj[playerName];
 
-          game.setDiceSymbol(symbol);
-          io.to(roomName).emit("get_public_game_data", game);
+          if (symbol === "skip") {
+            game.setDiceSymbol(symbol);
+            game.makeTurn();
+            io.to(roomName).emit("new_turn", game.currentTurnPlayer.username);
+            io.to(roomName).emit("get_public_game_data", game);
+          } else if (symbol === "discovery" || symbol === "robbery") {
+            playerObj.acted = false;
+            socket.emit("allow_action", symbol);
+          } else {
+            game.setDiceSymbol(symbol);
+            const boardWithPossiblyBuildings = game.getFreePlaces();
+            io.to(roomName).emit("get_public_game_data", game);
+            socket.emit("send_private_game_data", {
+              ...game,
+              board: boardWithPossiblyBuildings,
+            });
+          }
+        } catch ({ title = "Error", message }) {
+          socket.emit("server_message", {
+            title: `${title}`,
+            message: `${message}`,
+            type: "error",
+          });
+        }
+      });
 
+      socket.on("action", ({ roomName, playerName, action }) => {
+        try {
+          const { game } = roomsData[roomName];
+          if (playerName !== game.currentTurnPlayer.username) return;
+          const playerObj = game.playersObj[playerName];
+
+          if (playerObj.acted) return;
+
+          const room = roomsData[roomName];
+
+          game.setDiceSymbol(action.type);
+          socket.emit("allow_action", null);
+
+          switch (action.type) {
+            case "discovery":
+              action.resource === "road_cards"
+                ? playerObj.road_cards++
+                : playerObj.cards[action.resource]++;
+              break;
+            case "robbery":
+              const opponentObj = game.playersObj[action.opponentName];
+              if (opponentObj.cards[action.resource] < 1) return;
+
+              io.to(room.playersSocketIndexes[action.opponentName]).emit(
+                "server_message",
+                {
+                  title: `${playerName} stole a resource card from you!`,
+                  message:
+                    "Enemy spies infiltrated the base and stole resources!",
+                  type: "message",
+                }
+              );
+
+              opponentObj.cards[action.resource]--;
+              playerObj.cards[action.resource]++;
+              break;
+            default:
+              break;
+          }
+
+          playerObj.acted = true;
           const boardWithPossiblyBuildings = game.getFreePlaces();
+          io.to(roomName).emit("get_public_game_data", game);
           socket.emit("send_private_game_data", {
             ...game,
             board: boardWithPossiblyBuildings,
           });
+          socket.emit("get_private_data", playerObj);
         } catch ({ title = "Error", message }) {
           socket.emit("server_message", {
             title: `${title}`,
@@ -217,6 +304,7 @@ const start = async () => {
           try {
             const { game } = roomsData[roomName];
             if (playerName !== game.currentTurnPlayer.username) return;
+            const playerObj = game.playersObj[playerName];
 
             game.addBuilding(
               desiredBuilding,
@@ -227,7 +315,6 @@ const start = async () => {
             );
 
             if (desiredBuilding === "H2O_station") {
-              const playerObj = game.playersObj[playerName];
               if (
                 playerObj.road < 1 ||
                 playerObj.base < 5 ||
@@ -239,7 +326,7 @@ const start = async () => {
                 );
 
               game.win();
-              socket.emit("confirm_win", game);
+              io.to(roomName).emit("confirm_win", game);
             } else {
               io.to(roomName).emit("get_public_game_data", game);
             }
@@ -271,23 +358,16 @@ const start = async () => {
             );
 
           game.finish();
-          io.to(roomName).emit("finish", game);
-
-          io.to(roomName).emit("server_message", {
-            title: `${
-              playerObj.color.charAt(0).toUpperCase() + playerObj.color.slice(1)
-            } won!`,
-            message: `Congratulations to ${playerName}`,
-            type: "message",
+          io.to(roomName).emit("get_public_game_data", game);
+          io.to(roomName).emit("finish", {
+            username: playerName,
+            color: playerObj.color,
           });
 
-          io.to(roomName).emit("server_message", {
-            title: `${
-              playerObj.color.charAt(0).toUpperCase() + playerObj.color.slice(1)
-            } won!`,
-            message: `Congratulations to ${playerName}`,
-            type: "message",
-          });
+          setTimeout(() => {
+            io.to(roomName).emit("remove_room");
+            delete roomsData[roomName];
+          }, 30 * 1000);
         } catch ({ title = "Error", message }) {
           socket.emit("server_message", {
             title: `${title}`,
@@ -321,6 +401,24 @@ const start = async () => {
           if (playerName !== game.currentTurnPlayer.username) return;
 
           game.sellToken(resource, from);
+
+          const playerData = game.playersObj[playerName];
+          socket.emit("get_private_data", playerData);
+        } catch ({ title = "Error", message }) {
+          socket.emit("server_message", {
+            title: `${title}`,
+            message: `${message}`,
+            type: "error",
+          });
+        }
+      });
+
+      socket.on("trade_cards", ({ roomName, playerName, from, to }) => {
+        try {
+          const { game } = roomsData[roomName];
+          if (playerName !== game.currentTurnPlayer.username) return;
+
+          game.tradeCards(from, to);
 
           const playerData = game.playersObj[playerName];
           socket.emit("get_private_data", playerData);

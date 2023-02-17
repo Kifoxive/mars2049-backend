@@ -1,5 +1,5 @@
 export default class Player {
-  constructor(username, color, playerId = null) {
+  constructor(username, color, playerId) {
     this.username = username;
     this.color = color;
     this.playerId = playerId;
@@ -10,35 +10,35 @@ export default class Player {
   road = 0;
 
   buildings = {
-    air_station: 0,
-    food_station: 0,
-    mineral_station: 0,
+    air_station: 20,
+    food_station: 20,
+    mineral_station: 20,
   };
 
-  labaratories = {
+  laboratories = {
     rate: 4,
     two: 0,
     three: 0,
   };
 
   cards = {
-    air: 20,
-    food: 20,
-    mineral: 20,
+    air: 2,
+    food: 2,
+    mineral: 2,
   };
 
   resource_tokens = {
     air: {
-      three: 2,
-      eight: 2,
+      three: 0,
+      eight: 0,
     },
     food: {
-      three: 2,
-      eight: 2,
+      three: 0,
+      eight: 0,
     },
     mineral: {
-      three: 2,
-      eight: 2,
+      three: 0,
+      eight: 0,
     },
   };
 
@@ -51,4 +51,5 @@ export default class Player {
 
   lastDice = null;
   isMyTurn = false;
+  acted = false;
 }
